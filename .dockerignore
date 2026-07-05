@@ -1,0 +1,16 @@
+# Never bake these into the image: secrets, host venv (would clobber the
+# image's linux venv and bust the dependency cache layer), repo history.
+.env
+.venv/
+.git/
+__pycache__/
+*.py[cod]
+*.db
+*.db-wal
+*.db-shm
+.smoke/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+tests/

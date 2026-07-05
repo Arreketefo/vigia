@@ -1,0 +1,18 @@
+FROM python:3.12-slim
+
+# uv for fast, reproducible installs
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+
+# Dependency layer (cached unless lockfile changes)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+# App layer
+COPY . .
+RUN uv sync --frozen --no-dev
+
+# Long-running scheduler daemon
+CMD ["uv", "run", "python", "-m", "vigia"]

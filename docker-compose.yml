@@ -1,0 +1,19 @@
+services:
+  vigia:
+    build: .
+    image: vigia:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Always the persistent volume, whatever the shared .env says: the
+      # history is the asset that makes anomaly detection work.
+      VIGIA_DB_PATH: /data/vigia.db
+    volumes:
+      - vigia-data:/data
+    healthcheck:
+      test: ["CMD", "uv", "run", "python", "-m", "vigia.healthcheck"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+volumes:
+  vigia-data:
