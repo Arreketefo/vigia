@@ -130,6 +130,7 @@ class AviasalesFlightSource:
         ret = _parse_date(entry.get("return_at"))
         origin = str(entry.get("origin") or entry.get("origin_code") or "")
         destination = str(entry.get("destination") or entry.get("destination_code") or "")
+        airline = entry.get("airline")
         return FlightQuote(
             origin=origin,
             destination=destination,
@@ -140,6 +141,9 @@ class AviasalesFlightSource:
             is_live=False,
             deep_link=_deep_link(entry.get("link"), origin, destination, depart, ret),
             source=self.name,
+            airline=str(airline).upper() if airline else None,
+            depart_time=_parse_time(entry.get("departure_at")),
+            return_time=_parse_time(entry.get("return_at")),
         )
 
     def _exceeds_duration(self, entry: dict[str, Any]) -> bool:
@@ -188,5 +192,19 @@ def _parse_date(value: Any) -> date | None:
         return None
     try:
         return datetime.fromisoformat(value[:10]).date()
+    except ValueError:
+        return None
+
+
+def _parse_time(value: Any) -> str | None:
+    """"HH:MM" local del ISO 8601 de la API ("2026-08-09T06:25:00+02:00").
+
+    Los buckets date-only ("2026-08-09") no traen hora: None, y la línea de
+    horario simplemente no se muestra en la alerta.
+    """
+    if not isinstance(value, str) or "T" not in value:
+        return None
+    try:
+        return datetime.fromisoformat(value).strftime("%H:%M")
     except ValueError:
         return None

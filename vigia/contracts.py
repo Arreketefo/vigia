@@ -19,6 +19,9 @@ class FlightQuote:
     is_live: bool
     deep_link: str | None
     source: str
+    airline: str | None = None      # IATA carrier code ("FR"), main leg
+    depart_time: str | None = None  # "HH:MM" local, outbound departure
+    return_time: str | None = None  # "HH:MM" local, return-leg departure
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,7 @@ class HotelQuote:
     is_live: bool
     deep_link: str | None
     source: str
+    hotel_name: str | None = None   # name of the hotel behind the price
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,11 @@ class Deal:
     # Set ONLY by candidate enrichment: total_price then includes
     # hotel_price_night * nights while baseline/drop_pct stay flight-only.
     hotel_price_night: float | None = None
+    # Presentation extras (cache/live data, best effort — None hides the line).
+    airline: str | None = None      # IATA carrier code of the fired quote
+    depart_time: str | None = None  # "HH:MM" local, outbound departure
+    return_time: str | None = None  # "HH:MM" local, return-leg departure
+    hotel_name: str | None = None   # hotel behind hotel_price_night/link
 
 
 class FlightSource(Protocol):

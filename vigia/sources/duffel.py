@@ -69,36 +69,47 @@ class DuffelPriceConfirmer:
             }
         }
         payload = await post_json(self._client, _URL, body, self._bucket, self._breaker)
-        flight_total = _cheapest_offer_total(payload, self._currency)
-        if flight_total is None:
+        winner = _cheapest_offer(payload, self._currency)
+        if winner is None:
             log.info(
                 "duffel: no live %s offers for %s->%s %s; alerting unconfirmed",
                 self._currency, deal.origin, deal.destination, deal.depart_date,
             )
             return deal
+        flight_total, airline, depart_time, return_time = winner
         hotel_part = (deal.hotel_price_night or 0.0) * deal.nights
         # Keep the alert internally consistent: the displayed drop must refer
         # to the LIVE flight price, not to the cache price that triggered it.
         drop_pct = deal.drop_pct
         if deal.baseline:
             drop_pct = (deal.baseline - flight_total) / deal.baseline
+        # Same consistency rule for the flight-detail line: the confirmed
+        # price belongs to Duffel's winning offer, whose carrier/times may
+        # differ from the cached quote that fired the deal — never show the
+        # stale ones next to the live price.
         return replace(
             deal,
             total_price=flight_total + hotel_part,
             drop_pct=drop_pct,
             confirmed=True,
+            airline=airline,
+            depart_time=depart_time,
+            return_time=return_time,
         )
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
 
-def _cheapest_offer_total(payload: Any, currency: str) -> float | None:
-    """Cheapest offers[].total_amount (all passengers) in the requested currency."""
+def _cheapest_offer(
+    payload: Any, currency: str
+) -> tuple[float, str | None, str | None, str | None] | None:
+    """(total, airline IATA, HH:MM ida, HH:MM vuelta) of the cheapest
+    offers[].total_amount (all passengers) in the requested currency."""
     if not isinstance(payload, dict):
         return None
     offers = (payload.get("data") or {}).get("offers") or []
-    totals: list[float] = []
+    best: tuple[float, str | None, str | None, str | None] | None = None
     for offer in offers:
         if not isinstance(offer, dict):
             continue
@@ -108,7 +119,37 @@ def _cheapest_offer_total(payload: Any, currency: str) -> float | None:
         if amount is None:
             continue
         try:
-            totals.append(float(amount))
+            total = float(amount)
         except (TypeError, ValueError):
             continue
-    return min(totals) if totals else None
+        if best is None or total < best[0]:
+            airline = _offer_airline(offer)
+            times = _slice_departure_times(offer)
+            best = (total, airline, times[0], times[1])
+    return best
+
+
+def _offer_airline(offer: dict[str, Any]) -> str | None:
+    owner = offer.get("owner")
+    if isinstance(owner, dict) and owner.get("iata_code"):
+        return str(owner["iata_code"]).upper()
+    return None
+
+
+def _slice_departure_times(offer: dict[str, Any]) -> tuple[str | None, str | None]:
+    """HH:MM local de salida del primer segmento de cada slice (ida, vuelta)."""
+    times: list[str | None] = [None, None]
+    slices = offer.get("slices")
+    if not isinstance(slices, list):
+        return (None, None)
+    for i, sl in enumerate(slices[:2]):
+        if not isinstance(sl, dict):
+            continue
+        segments = sl.get("segments")
+        if not isinstance(segments, list) or not segments:
+            continue
+        first = segments[0]
+        departing = first.get("departing_at") if isinstance(first, dict) else None
+        if isinstance(departing, str) and len(departing) >= 16 and departing[10] == "T":
+            times[i] = departing[11:16]
+    return (times[0], times[1])

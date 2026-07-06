@@ -14,9 +14,17 @@ DEPART, RETURN = date(2026, 9, 10), date(2026, 9, 14)
 class FakeFlightSource:
     name = "fake-flights"
 
-    def __init__(self, price: float, discovered: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        price: float,
+        discovered: list[str] | None = None,
+        depart_time: str | None = None,
+        return_time: str | None = None,
+    ) -> None:
         self.price = price
         self.discovered = discovered or []
+        self.depart_time = depart_time
+        self.return_time = return_time
         self.calendar_calls: list[tuple[str, str, str]] = []
 
     async def search_range(self, origin, month_bucket, price_min, price_max):
@@ -38,6 +46,7 @@ class FakeFlightSource:
                 origin=origin, destination=destination, depart_date=DEPART,
                 return_date=RETURN, price=self.price, currency="eur",
                 is_live=False, deep_link="https://example.test/flight", source=self.name,
+                depart_time=self.depart_time, return_time=self.return_time,
             )
         ]
 
@@ -119,6 +128,87 @@ async def test_tick_fires_alert_and_dedups(store: PriceStore):
 
     # Tick must have stamped the healthcheck key
     assert await store.get_meta("last_tick_at") is not None
+
+
+async def test_schedule_filter_is_off_by_default_and_optional(store: PriceStore):
+    cfg = make_settings(batch_size=50)
+    await store.upsert_route("ALC", "BUD")
+    route = (await store.enabled_routes())[0]
+    await _seed_history(store, route.id, flight_price=300.0, n=10)
+
+    # madrugón: ida 06:25 — sin filtro (default) el chollo entra igual que siempre
+    flights = FakeFlightSource(price=50.0, depart_time="06:25", return_time="23:30")
+    notifier = CollectingNotifier()
+    stats = await tick(flights, FakeHotelSource(100.0), store, cfg, [notifier])
+    assert stats.observations > 0
+    assert stats.alerts_sent == 1
+
+    # con filtro activo, ese mismo día queda descartado ANTES de observarse
+    # (alerts_sent quedaría a 0 por el dedup igualmente: la aserción que
+    # cubre el filtro es la de observations)
+    cfg_filtered = make_settings(batch_size=50, depart_after="07:00")
+    stats2 = await tick(flights, FakeHotelSource(100.0), store, cfg_filtered, [notifier])
+    assert stats2.observations == 0
+
+    # la vuelta también filtra
+    cfg_return = make_settings(batch_size=50, return_before="22:00")
+    stats3 = await tick(flights, FakeHotelSource(100.0), store, cfg_return, [notifier])
+    assert stats3.observations == 0
+
+
+async def test_schedule_filter_passes_quotes_without_times(store: PriceStore):
+    """Buckets date-only (sin hora): el filtro NO puede descartarlos —
+    principio de no perder ofertas por dato ausente."""
+    cfg = make_settings(batch_size=50, depart_after="07:00", return_before="22:00")
+    await store.upsert_route("ALC", "BUD")
+    route = (await store.enabled_routes())[0]
+    await _seed_history(store, route.id, flight_price=300.0, n=10)
+
+    flights = FakeFlightSource(price=50.0)  # sin depart_time/return_time
+    notifier = CollectingNotifier()
+    stats = await tick(flights, FakeHotelSource(100.0), store, cfg, [notifier])
+    assert stats.alerts_sent == 1
+
+
+async def test_schedule_filter_normalization_and_off():
+    from vigia.config import hhmm_or_empty
+
+    assert hhmm_or_empty("7:30") == "07:30"
+    assert hhmm_or_empty(" off ") == ""
+    assert hhmm_or_empty("OFF") == ""
+    assert hhmm_or_empty("") == ""
+    import pytest
+
+    with pytest.raises(ValueError):
+        hhmm_or_empty("25:00")
+    with pytest.raises(ValueError):
+        hhmm_or_empty("mediodía")
+
+
+async def test_confirmed_offer_violating_schedule_filter_is_dropped(store: PriceStore):
+    """Duffel elige la oferta viva más barata: si sale a la hora excluida, un
+    'confirmado' no puede anunciar justo el madrugón que el usuario apagó."""
+    from dataclasses import replace
+
+    class EarlyBirdConfirmer:
+        name = "early"
+
+        async def confirm(self, deal: Deal) -> Deal:
+            return replace(deal, confirmed=True, depart_time="06:10")
+
+    cfg = make_settings(batch_size=50, depart_after="07:00")
+    await store.upsert_route("ALC", "BUD")
+    route = (await store.enabled_routes())[0]
+    await _seed_history(store, route.id, flight_price=300.0, n=10)
+
+    # la quote cacheada pasa el filtro (08:30); la oferta confirmada no (06:10)
+    flights = FakeFlightSource(price=50.0, depart_time="08:30", return_time="20:00")
+    notifier = CollectingNotifier()
+    stats = await tick(flights, FakeHotelSource(100.0), store, cfg, [notifier],
+                       confirmer=EarlyBirdConfirmer())
+    assert stats.deals_fired == 1
+    assert stats.alerts_sent == 0
+    assert notifier.deals == []
 
 
 async def test_tick_normal_price_no_alert(store: PriceStore):

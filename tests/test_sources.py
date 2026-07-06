@@ -56,6 +56,10 @@ async def test_aviasales_calendar_parses_grouped_prices():
     )
     assert not q.is_live
     assert q.deep_link == "https://www.aviasales.com/search/ALC1009BUD14092?t=W6"
+    # detalle de presentación: aerolínea y horas locales de salida de cada pierna
+    assert q.airline == "W6"
+    assert q.depart_time == "06:35"
+    assert q.return_time == "13:30"
 
 
 async def test_aviasales_calendar_uses_key_as_depart_fallback():
@@ -67,6 +71,9 @@ async def test_aviasales_calendar_uses_key_as_depart_fallback():
     assert quotes[0].return_date is None
     # No link in the entry -> constructed search URL
     assert quotes[0].deep_link == "https://www.aviasales.com/search/ALC1009BUD"
+    # el fallback date-only no trae hora ni aerolínea: los campos quedan a None
+    assert quotes[0].airline is None
+    assert quotes[0].depart_time is None
 
 
 async def test_aviasales_search_range_parses_price_range_payload():

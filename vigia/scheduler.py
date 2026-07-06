@@ -152,6 +152,19 @@ async def _discover_routes(
                  len(stats.discovered_routes), ", ".join(stats.discovered_routes))
 
 
+def _schedule_ok(
+    depart_time: str | None, return_time: str | None,
+    depart_after: str, return_before: str,
+) -> bool:
+    """Filtro OPCIONAL de horario ("" = apagado). Las horas desconocidas
+    (buckets date-only de la caché) PASAN, igual que hace max_flight_hours
+    con duraciones ausentes: no se pierden ofertas por dato ausente. Las
+    "HH:MM" normalizadas comparan bien como strings."""
+    depart_ok = not depart_after or not depart_time or depart_time >= depart_after
+    return_ok = not return_before or not return_time or return_time <= return_before
+    return depart_ok and return_ok
+
+
 @dataclass(frozen=True)
 class _Candidate:
     quote: FlightQuote
@@ -182,6 +195,7 @@ async def _scan_pair(
         and q.depart_date >= today  # cache can still hold departed trips
         and q.price > 0
         and (trip_policy is None or trip_policy.allows(q.depart_date, q.return_date))
+        and _schedule_ok(q.depart_time, q.return_time, cfg.depart_after, cfg.return_before)
     ]
     # Hotel lookups are the scarce resource: only the cheapest flight-days of
     # the month get one. Flight-only mode keeps the same cap for symmetry.
@@ -292,6 +306,10 @@ async def _maybe_alert(
         # candidate ENRICHMENT, i.e. "baseline is flight-only, hotel added on
         # top" — sweep deals have hotel already inside total AND baseline.
         hotel_link=c.hotel.deep_link if c.hotel else None,
+        airline=c.quote.airline,
+        depart_time=c.quote.depart_time,
+        return_time=c.quote.return_time,
+        hotel_name=c.hotel.hotel_name if c.hotel else None,
     )
 
     if enricher is not None:
@@ -316,6 +334,15 @@ async def _maybe_alert(
         if deal.total_price > cap:
             log.info("live price killed the deal: %s->%s %.0f EUR",
                      route.origin, route.destination, deal.total_price)
+            return
+        # El confirmador elige la oferta viva más barata, que puede salir a
+        # una hora que el filtro de horario excluye — un "confirmado" no
+        # puede anunciar justo el madrugón que el usuario apagó.
+        if not _schedule_ok(deal.depart_time, deal.return_time,
+                            cfg.depart_after, cfg.return_before):
+            log.info("confirmed offer violates the schedule filter: %s->%s "
+                     "ida %s vuelta %s", route.origin, route.destination,
+                     deal.depart_time, deal.return_time)
             return
 
     # The deals table keeps DETECTION units (total consistent with baseline /
@@ -368,4 +395,5 @@ async def _enrich_with_hotel(
         total_price=trip_total,
         hotel_link=hotel.deep_link,
         hotel_price_night=hotel.price_per_night,
+        hotel_name=hotel.hotel_name,
     )

@@ -84,3 +84,34 @@ async def test_confirm_one_way_deal_passes_through():
     deal = _deal(return_date=None, nights=0, hotel_price_night=None)
     result = await _confirmer(lambda r: httpx.Response(500)).confirm(deal)
     assert result is deal  # no API call, unchanged
+
+
+async def test_confirm_replaces_stale_flight_detail_with_live_offer():
+    """El precio confirmado es de la oferta viva de Duffel: la aerolínea y
+    los horarios de la quote cacheada no pueden acompañarlo."""
+    payload = _offers_payload(("250.00", "EUR"))
+    payload["data"]["offers"][0].update({
+        "owner": {"iata_code": "VY", "name": "Vueling"},
+        "slices": [
+            {"segments": [{"departing_at": "2026-10-09T18:40:00"}]},
+            {"segments": [{"departing_at": "2026-10-12T07:15:00"}]},
+        ],
+    })
+    stale = _deal(airline="FR", depart_time="06:25", return_time="21:40")
+    deal = await _confirmer(lambda r: httpx.Response(200, json=payload)).confirm(stale)
+    assert deal.confirmed
+    assert deal.airline == "VY"
+    assert deal.depart_time == "18:40"
+    assert deal.return_time == "07:15"
+
+
+async def test_confirm_clears_flight_detail_when_offer_has_none():
+    """Oferta viva sin slices/owner: mejor sin detalle que con uno falso."""
+    stale = _deal(airline="FR", depart_time="06:25", return_time="21:40")
+    deal = await _confirmer(
+        lambda r: httpx.Response(200, json=_offers_payload(("250.00", "EUR")))
+    ).confirm(stale)
+    assert deal.confirmed
+    assert deal.airline is None
+    assert deal.depart_time is None
+    assert deal.return_time is None

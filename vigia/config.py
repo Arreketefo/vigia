@@ -1,7 +1,22 @@
-from datetime import date
+from datetime import date, datetime
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from radar_core.config import csv_dates, csv_set, radar_settings_config
+
+
+def hhmm_or_empty(raw: str) -> str:
+    """"HH:MM" normalizado ("7:30" → "07:30"), o "" = desactivado.
+
+    "off" también desactiva: el bot de Telegram no puede enviar un valor
+    vacío con /set, así que necesita una palabra para apagar el filtro.
+    Valida en el borde (env y overrides del bot): un horario malformado debe
+    fallar al configurarse, no compararse en silencio como string en el tick.
+    """
+    raw = raw.strip()
+    if not raw or raw.lower() == "off":
+        return ""
+    return f"{datetime.strptime(raw, '%H:%M'):%H:%M}"
 
 
 class Settings(BaseSettings):
@@ -32,6 +47,17 @@ class Settings(BaseSettings):
     # is unknown pass through).
     exclude_countries: str = ""
     max_flight_hours: float | None = None
+    # Filtro de horario OPCIONAL (vacío u "off" = sin filtro, comportamiento
+    # de siempre). OJO: la Capa 1 trae EL vuelo más barato de cada día, así
+    # que esto DESCARTA los días cuyo chollo sale a horas malas — no
+    # encuentra horas mejores. Los quotes sin hora conocida PASAN el filtro.
+    # La comparación es de misma jornada: return_before="23:30" = "la vuelta
+    # no sale después de las 23:30"; NO expresa "hasta pasada la medianoche"
+    # (un valor de madrugada como "00:30" filtraría casi todo). Al activarlo,
+    # la población de observaciones cambia: la baseline tarda unos 30-45 días
+    # en re-asentarse con solo días de horario bueno.
+    depart_after: str = ""      # "HH:MM": la ida no sale antes de esta hora
+    return_before: str = ""     # "HH:MM": la vuelta no sale después de esta
     # Calendar trip windows (see vigia/tripwindows.py). Empty = disabled.
     # Before this date: any weekday, pre_weekend nights; from it on: only
     # weekends/puentes per the ES + holidays_region calendar.
@@ -48,6 +74,12 @@ class Settings(BaseSettings):
     # flight-only); 'sweep' puts the hotel in every Layer-1 scan (heavy).
     hotel_mode: str = "candidates"
     liteapi_key: str | None = None
+    # Suelo de calidad del hotel (filtros server-side de LiteAPI; 0 = sin
+    # filtro). min_rating = nota de huéspedes 0-10; min_reviews evita notas
+    # altas con 3 reseñas. Ajustables EN CALIENTE por el bot (/set); el
+    # runtime empuja el valor efectivo a la fuente antes de cada tick.
+    hotel_min_rating: float = 7.0
+    hotel_min_reviews: int = 50
     # Full-trip cap (flight*pax + hotel*nights) applied to enriched candidates
     # in 'candidates' mode. budget_cap governs detection (flight-only totals).
     trip_budget_cap: float = 600.0
@@ -61,6 +93,11 @@ class Settings(BaseSettings):
     # Layer 2 (optional)
     duffel_token: str | None = None
     enable_price_confirmer: bool = False
+
+    @field_validator("depart_after", "return_before")
+    @classmethod
+    def _valid_hhmm(cls, value: str) -> str:
+        return hhmm_or_empty(value)
 
     def excluded_countries(self) -> set[str]:
         return csv_set(self.exclude_countries)

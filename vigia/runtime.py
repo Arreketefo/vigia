@@ -22,8 +22,8 @@ from radar_core.botcontrol import (
 )
 from radar_core.runtime import setup_logging
 
-from vigia.cities import CityDirectory
-from vigia.config import Settings
+from vigia.cities import AirlineDirectory, CityDirectory
+from vigia.config import Settings, hhmm_or_empty
 from vigia.contracts import HotelSource, PriceConfirmer
 from vigia.notifiers import build_notifiers
 from vigia.scheduler import TickStats, tick
@@ -41,7 +41,8 @@ __all__ = ["OVERRIDES", "Runtime", "build_hotel_source", "setup_logging"]
 # Claves ajustables por Telegram EN CALIENTE (aplican al siguiente tick).
 # Fuera de la lista a propósito: tokens/keys/db_path (seguridad), cadencias y
 # batch (protección de rate limits) y max_flight_hours / trip_*_nights (van
-# horneados en la fuente: requieren reinicio).
+# horneados en la fuente: requieren reinicio). El suelo de calidad del hotel
+# SÍ es hot: run_tick lo empuja a la fuente antes de cada tick.
 OVERRIDES: dict[str, Override] = {
     "budget_cap": Override("budget_cap", float_range(1, 10000),
                            "presupuesto de detección, vuelos 2 pax (EUR)"),
@@ -61,19 +62,42 @@ OVERRIDES: dict[str, Override] = {
     "pre_weekend_nights_min": Override("pre_weekend_nights_min", int_range(1, 14), "noches"),
     "pre_weekend_nights_max": Override("pre_weekend_nights_max", int_range(1, 14), "noches"),
     "discovery": Override("discovery", boolean, "descubrir rutas nuevas (on/off)"),
+    "depart_after": Override("depart_after", hhmm_or_empty,
+                             "ida no antes de HH:MM ('off' = sin filtro)"),
+    "return_before": Override("return_before", hhmm_or_empty,
+                              "vuelta no después de HH:MM, misma jornada "
+                              "('off' = sin filtro)"),
+    "hotel_min_rating": Override("hotel_min_rating", float_range(0, 10),
+                                 "nota mínima del hotel 0-10 (0 = sin filtro)"),
+    "hotel_min_reviews": Override("hotel_min_reviews", int_range(0, 100000),
+                                  "reseñas mínimas del hotel (0 = sin filtro)"),
 }
 
 
-def build_hotel_source(cfg: Settings) -> HotelSource | None:
+def build_hotel_source(
+    cfg: Settings, cities: CityDirectory | None = None
+) -> HotelSource | None:
+    floor_active = cfg.hotel_min_rating > 0 or cfg.hotel_min_reviews > 0
     if cfg.hotel_source == "liteapi":
         if not cfg.liteapi_key:
             raise ValueError("hotel_source=liteapi requires VIGIA_LITEAPI_KEY")
-        return LiteApiHotelSource(cfg.liteapi_key, currency=cfg.currency, adults=cfg.pax)
+        # El log del suelo EFECTIVO lo emite set_quality_floor (cubre también
+        # overrides persistidos que pisan al .env desde el primer tick).
+        return LiteApiHotelSource(
+            cfg.liteapi_key, currency=cfg.currency, adults=cfg.pax,
+            min_rating=cfg.hotel_min_rating, min_reviews=cfg.hotel_min_reviews,
+            city_names=cities,
+        )
     if cfg.hotel_source == "hotellook":
         log.warning(
             "hotellook was shut down by Travelpayouts on 2025-10-20; "
             "expect failures unless it has been revived"
         )
+        if floor_active:
+            log.warning(
+                "hotel_min_rating/hotel_min_reviews solo aplican a liteapi; "
+                "hotellook los IGNORA — el hotel más barato vuelve a ser sin filtro"
+            )
         return HotellookHotelSource(cfg.travelpayouts_token, cfg.currency)
     if cfg.hotel_source != "none":
         raise ValueError(f"unknown hotel_source: {cfg.hotel_source!r}")
@@ -81,10 +105,10 @@ def build_hotel_source(cfg: Settings) -> HotelSource | None:
 
 
 def _split_sweep_and_enricher(
-    cfg: Settings,
+    cfg: Settings, cities: CityDirectory | None = None
 ) -> tuple[HotelSource | None, HotelSource | None]:
     """Returns (sweep hotel source, candidate enricher) per hotel_mode."""
-    source = build_hotel_source(cfg)
+    source = build_hotel_source(cfg, cities)
     if source is None:
         return None, None
     if cfg.hotel_mode == "candidates":
@@ -147,7 +171,11 @@ class Runtime:
             trip_max_nights=cfg.trip_max_nights,
             max_flight_hours=cfg.max_flight_hours,
         )
-        self.hotels, self.enricher = _split_sweep_and_enricher(cfg)
+        # cities se crea ANTES que las fuentes: LiteAPI lo usa para que el
+        # deep link del hotel diga "Budapest" y no "BUD".
+        self.cities = CityDirectory()
+        self.hotels, self.enricher = _split_sweep_and_enricher(cfg, self.cities)
+        self._floor_warned = False  # aviso único de suelo-sin-fuente-que-lo-aplique
         self.confirmer = build_confirmer(cfg)
         if self.hotels is None:
             # Detection runs on flight-only totals (with or without enricher):
@@ -174,8 +202,8 @@ class Runtime:
                 "VIGIA_BUDGET_CAP to a flight-only budget (e.g. %.0f)",
                 cfg.budget_cap, cfg.trip_budget_cap, cfg.trip_budget_cap / 3,
             )
-        self.cities = CityDirectory()
-        self.notifiers = build_notifiers(cfg, cities=self.cities)
+        self.airlines = AirlineDirectory()
+        self.notifiers = build_notifiers(cfg, cities=self.cities, airlines=self.airlines)
         self.commander: BotCommander | None = None
         if cfg.telegram_bot_token and cfg.telegram_chat_id:
             self.commander = BotCommander(
@@ -197,6 +225,25 @@ class Runtime:
 
         if await skip_tick_if_paused(self.store, LAST_TICK_KEY):
             return TickStats()
+        # El suelo de calidad del hotel es hot: empujar el efectivo a las
+        # fuentes que lo soporten (duck-typed, como aclose). La fuente
+        # invalida su caché de quotes solo si el valor cambió.
+        pushed = False
+        for source in (self.hotels, self.enricher):
+            set_floor = getattr(source, "set_quality_floor", None)
+            if set_floor is not None:
+                set_floor(cfg.hotel_min_rating, cfg.hotel_min_reviews)
+                pushed = True
+        if (not pushed and not self._floor_warned
+                and (cfg.hotel_min_rating > 0 or cfg.hotel_min_reviews > 0)):
+            # /set aceptó el valor pero ninguna fuente lo aplica (hotellook
+            # o sin fuente de hotel): decirlo UNA vez, no cada tick.
+            self._floor_warned = True
+            log.warning(
+                "hotel_min_rating/hotel_min_reviews configurados pero la "
+                "fuente de hotel actual (%s) no los soporta — sin efecto",
+                self.cfg.hotel_source,
+            )
         return await tick(
             flights=self.flights,
             hotels=self.hotels,
@@ -264,7 +311,7 @@ class Runtime:
         # Duck-typed close for every component: providers behind the Protocol
         # interfaces own httpx clients the core must not know concretely.
         for component in (self.flights, self.hotels, self.enricher, self.confirmer,
-                          self.cities, self.commander, *self.notifiers):
+                          self.cities, self.airlines, self.commander, *self.notifiers):
             aclose = getattr(component, "aclose", None)
             if aclose is not None:
                 await aclose()

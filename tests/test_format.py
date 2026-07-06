@@ -41,3 +41,16 @@ def test_deal_lines_without_baseline():
     lines = deal_lines(_deal(baseline=None, drop_pct=None))
     assert not any("Baseline" in line for line in lines)
     assert not any("None" in line for line in lines if "hotel" in line.lower())
+
+
+def test_deal_lines_flight_detail_and_hotel_name():
+    lines = deal_lines(_deal(
+        airline="FR", depart_time="06:25", return_time="21:40",
+        hotel_name="Hotel Giorgione", hotel_price_night=49.0,
+    ))
+    assert any(line == "Flight detail: FR · out 06:25 · back 21:40" for line in lines)
+    assert any(line == "Hotel: Hotel Giorgione" for line in lines)
+    # sin los campos, las líneas no aparecen
+    bare = deal_lines(_deal())
+    assert not any("Flight detail" in line for line in bare)
+    assert not any(line.startswith("Hotel:") for line in bare)

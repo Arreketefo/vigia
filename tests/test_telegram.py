@@ -12,6 +12,11 @@ class FakeCities:
         return {"IBZ": "Ibiza", "PMI": "Palma de Mallorca"}.get(code)
 
 
+class FakeAirlines:
+    async def name(self, code: str) -> str | None:
+        return {"FR": "Ryanair", "W6": "Wizz Air"}.get(code)
+
+
 def _deal(**overrides):
     base = dict(
         origin="ALC", destination="IBZ",
@@ -29,7 +34,9 @@ def _capture_notifier(captured: dict) -> TelegramNotifier:
         captured.update(json.loads(request.content))
         return httpx.Response(200, json={"ok": True})
 
-    notifier = TelegramNotifier("tok", "42", cities=FakeCities())  # type: ignore[arg-type]
+    notifier = TelegramNotifier(
+        "tok", "42", cities=FakeCities(), airlines=FakeAirlines(),  # type: ignore[arg-type]
+    )
     notifier._transport._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return notifier
 
@@ -63,3 +70,28 @@ async def test_send_unknown_city_falls_back_to_code():
     captured: dict = {}
     await _capture_notifier(captured).send(_deal(destination="XXX"))
     assert "ALC → XXX" in captured["text"]
+
+
+async def test_send_shows_airline_times_and_hotel_name():
+    captured: dict = {}
+    await _capture_notifier(captured).send(_deal(
+        airline="FR", depart_time="06:25", return_time="21:40",
+        hotel_name="Hotel Giorgione",
+    ))
+    text = captured["text"]
+    assert "✈️ Ryanair · ida 06:25 · vuelta 21:40" in text
+    assert "🏨 Hotel Giorgione" in text
+
+
+async def test_send_unknown_airline_falls_back_to_code_and_partial_times():
+    captured: dict = {}
+    await _capture_notifier(captured).send(_deal(airline="ZZ", depart_time="10:00"))
+    assert "✈️ ZZ · ida 10:00" in captured["text"]
+    assert "vuelta" not in captured["text"]
+
+
+async def test_send_without_flight_detail_or_hotel_name_omits_the_lines():
+    captured: dict = {}
+    await _capture_notifier(captured).send(_deal())
+    assert "✈️" not in captured["text"]
+    assert "🏨" not in captured["text"]
