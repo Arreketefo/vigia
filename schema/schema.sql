@@ -79,3 +79,10 @@ CREATE TABLE IF NOT EXISTS meta (
     key       TEXT PRIMARY KEY,
     value     TEXT NOT NULL
 );
+
+-- Hot config overrides set via the Telegram bot (radar-core botcontrol).
+CREATE TABLE IF NOT EXISTS config_overrides (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);

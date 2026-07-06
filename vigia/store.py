@@ -58,6 +58,30 @@ class PriceStore(BaseStore):
         )
         await self._conn.commit()
 
+    async def set_route_enabled(self, destination: str, enabled: bool) -> bool:
+        cur = await self._conn.execute(
+            "UPDATE routes SET enabled = ? WHERE destination = ?",
+            (1 if enabled else 0, destination.upper()),
+        )
+        await self._conn.commit()
+        return cur.rowcount > 0
+
+    async def stats_24h(self) -> tuple[int, int]:
+        """(observaciones, alertas) de las últimas 24 h — para /status."""
+        async def count(sql: str) -> int:
+            cur = await self._conn.execute(sql)
+            row = await cur.fetchone()
+            return int(row["n"]) if row else 0
+
+        obs = await count(
+            "SELECT COUNT(*) AS n FROM price_observations"
+            " WHERE captured_at >= datetime('now', '-1 day')"
+        )
+        alerts = await count(
+            "SELECT COUNT(*) AS n FROM alerts_sent WHERE sent_at >= datetime('now', '-1 day')"
+        )
+        return obs, alerts
+
     async def enabled_routes(self) -> list[Route]:
         cur = await self._conn.execute(
             "SELECT id, origin, destination FROM routes WHERE enabled = 1 ORDER BY id"

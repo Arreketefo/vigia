@@ -9,7 +9,19 @@ from __future__ import annotations
 import logging
 from datetime import date
 
+from radar_core.botcontrol import (
+    BotCommander,
+    DomainHandler,
+    Override,
+    apply_overrides,
+    boolean,
+    float_range,
+    int_range,
+    is_paused,
+    text,
+)
 from radar_core.runtime import setup_logging
+from radar_core.store import utcnow_str
 
 from vigia.cities import CityDirectory
 from vigia.config import Settings
@@ -25,7 +37,32 @@ from vigia.tripwindows import TripWindowPolicy
 
 log = logging.getLogger(__name__)
 
-__all__ = ["Runtime", "build_hotel_source", "setup_logging"]
+__all__ = ["OVERRIDES", "Runtime", "build_hotel_source", "setup_logging"]
+
+# Claves ajustables por Telegram EN CALIENTE (aplican al siguiente tick).
+# Fuera de la lista a propósito: tokens/keys/db_path (seguridad), cadencias y
+# batch (protección de rate limits) y max_flight_hours / trip_*_nights (van
+# horneados en la fuente: requieren reinicio).
+OVERRIDES: dict[str, Override] = {
+    "budget_cap": Override("budget_cap", float_range(1, 10000),
+                           "presupuesto de detección, vuelos 2 pax (EUR)"),
+    "trip_budget_cap": Override("trip_budget_cap", float_range(1, 20000),
+                                "tope del viaje completo (EUR)"),
+    "min_drop_pct": Override("min_drop_pct", float_range(0.01, 0.9),
+                             "caída mínima vs típico (0.2 = 20%)"),
+    "z_threshold": Override("z_threshold", float_range(0.5, 10), "sensibilidad z"),
+    "hard_steal_ratio": Override("hard_steal_ratio", float_range(0.1, 1.0),
+                                 "umbral del chollo absoluto"),
+    "realert_drop": Override("realert_drop", float_range(0.01, 0.9),
+                             "mejora mínima para re-avisar"),
+    "exclude_countries": Override("exclude_countries", text, "países ISO, coma (ES,PT)"),
+    "weekend_only_after": Override("weekend_only_after", _date_or_empty := (
+        lambda raw: "" if not raw.strip() else str(date.fromisoformat(raw.strip()))
+    ), "YYYY-MM-DD o vacío para desactivar"),
+    "pre_weekend_nights_min": Override("pre_weekend_nights_min", int_range(1, 14), "noches"),
+    "pre_weekend_nights_max": Override("pre_weekend_nights_max", int_range(1, 14), "noches"),
+    "discovery": Override("discovery", boolean, "descubrir rutas nuevas (on/off)"),
+}
 
 
 def build_hotel_source(cfg: Settings) -> HotelSource | None:
@@ -139,27 +176,96 @@ class Runtime:
                 cfg.budget_cap, cfg.trip_budget_cap, cfg.trip_budget_cap / 3,
             )
         self.cities = CityDirectory()
-        self.trip_policy = build_trip_policy(cfg)
         self.notifiers = build_notifiers(cfg, cities=self.cities)
+        self.commander: BotCommander | None = None
+        if cfg.telegram_bot_token and cfg.telegram_chat_id:
+            self.commander = BotCommander(
+                cfg.telegram_bot_token,
+                {str(cfg.telegram_chat_id)},
+                store,
+                "vigia",
+                OVERRIDES,
+                domain_commands=self._domain_commands(),
+                status_provider=self._status,
+            )
 
     async def run_tick(self) -> TickStats:
+        # Config efectiva del tick = .env ⊕ overrides del bot (en caliente).
+        cfg = apply_overrides(self.cfg, await self.store.get_overrides(), OVERRIDES)
+        if await is_paused(self.store):
+            from vigia.scheduler import LAST_TICK_KEY
+
+            await self.store.set_meta(LAST_TICK_KEY, utcnow_str())
+            log.info("en pausa (/reanuda en Telegram): tick omitido")
+            return TickStats()
         return await tick(
             flights=self.flights,
             hotels=self.hotels,
             store=self.store,
-            cfg=self.cfg,
+            cfg=cfg,
             notifiers=self.notifiers,
             confirmer=self.confirmer,
             enricher=self.enricher,
             cities=self.cities,
-            trip_policy=self.trip_policy,
+            trip_policy=build_trip_policy(cfg),
         )
+
+    def _domain_commands(self) -> dict[str, DomainHandler]:
+        async def presupuesto(args: str) -> str:
+            value = OVERRIDES["budget_cap"].parse(args)
+            await self.store.set_override("budget_cap", args.strip())
+            return f"budget_cap → {value} ✓"
+
+        async def presupuestoviaje(args: str) -> str:
+            value = OVERRIDES["trip_budget_cap"].parse(args)
+            await self.store.set_override("trip_budget_cap", args.strip())
+            return f"trip_budget_cap → {value} ✓"
+
+        async def paises(args: str) -> str:
+            if not args.strip():
+                await self.store.delete_override("exclude_countries")
+                return "exclude_countries → (.env)"
+            await self.store.set_override("exclude_countries", args.strip().upper())
+            return f"países excluidos → {args.strip().upper()} ✓"
+
+        async def rutas(args: str) -> str:
+            routes = await self.store.enabled_routes()
+            listado = ", ".join(r.destination for r in routes)
+            return f"{len(routes)} rutas: {listado}"
+
+        async def quitaruta(args: str) -> str:
+            dest = args.strip().upper()
+            if not dest:
+                return "uso: /quitaruta BUD"
+            ok = await self.store.set_route_enabled(dest, False)
+            return f"{dest} desactivada ✓" if ok else f"{dest} no existe"
+
+        async def ponruta(args: str) -> str:
+            dest = args.strip().upper()
+            if not dest:
+                return "uso: /ponruta BUD"
+            ok = await self.store.set_route_enabled(dest, True)
+            return f"{dest} reactivada ✓" if ok else f"{dest} no existe"
+
+        return {
+            "presupuesto": presupuesto,
+            "presupuestoviaje": presupuestoviaje,
+            "paises": paises,
+            "rutas": rutas,
+            "quitaruta": quitaruta,
+            "ponruta": ponruta,
+        }
+
+    async def _status(self) -> str:
+        obs, alerts = await self.store.stats_24h()
+        routes = len(await self.store.enabled_routes())
+        return f"24h: {obs} observaciones, {alerts} alertas · {routes} rutas vigiladas"
 
     async def aclose(self) -> None:
         # Duck-typed close for every component: providers behind the Protocol
         # interfaces own httpx clients the core must not know concretely.
         for component in (self.flights, self.hotels, self.enricher, self.confirmer,
-                          self.cities, *self.notifiers):
+                          self.cities, self.commander, *self.notifiers):
             aclose = getattr(component, "aclose", None)
             if aclose is not None:
                 await aclose()
