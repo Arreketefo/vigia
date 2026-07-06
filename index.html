@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vigía — Travel Deal Radar</title>
+<meta name="description" content="Vigía is a travel deal radar. It continuously watches flight fares departing Alicante (ALC) and sends an instant Telegram alert the moment a real deal appears.">
+<meta property="og:title" content="Vigía — Travel Deal Radar">
+<meta property="og:description" content="Continuous fare monitoring from Alicante (ALC) with instant Telegram alerts when prices drop below their historical baseline.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://arreketefo.github.io/vigia/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%230a1410'/%3E%3Ccircle cx='50' cy='50' r='34' fill='none' stroke='%2345e58e' stroke-width='3' opacity='.45'/%3E%3Ccircle cx='50' cy='50' r='18' fill='none' stroke='%2345e58e' stroke-width='3' opacity='.7'/%3E%3Cpath d='M50 50 L50 8 A42 42 0 0 1 79 20 Z' fill='%2345e58e' opacity='.85'/%3E%3Ccircle cx='66' cy='62' r='5' fill='%23ffb454'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,340;0,9..144,420;0,9..144,560;1,9..144,340&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a1410;
+  --surface:#0e1a14;
+  --surface-2:#122019;
+  --line:rgba(105,190,140,.16);
+  --line-strong:rgba(105,190,140,.32);
+  --ink:#e9f3ec;
+  --muted:#93ab9c;
+  --green:#45e58e;
+  --green-dim:rgba(69,229,142,.55);
+  --amber:#ffb454;
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Fraunces",Georgia,serif;
+  font-weight:340;
+  font-size:17px;
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+body::before{ /* faint vignette + phosphor glow so the page reads as a lit console, not flat black */
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(1100px 600px at 78% -10%, rgba(69,229,142,.07), transparent 60%),
+    radial-gradient(900px 700px at -10% 100%, rgba(255,180,84,.04), transparent 55%);
+  z-index:0;
+}
+.mono{font-family:"Spline Sans Mono",ui-monospace,monospace}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
+a{color:var(--green);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+
+header{
+  border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:10;
+  background:rgba(10,20,16,.85);
+  backdrop-filter:blur(8px);
+}
+.nav{display:flex;align-items:center;justify-content:space-between;height:64px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--ink)}
+.brand:hover{text-decoration:none}
+.brand-dot{
+  width:10px;height:10px;border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 12px var(--green-dim);
+  animation:blink 2.4s ease-in-out infinite;
+}
+.brand-name{font-family:"Spline Sans Mono",monospace;font-weight:600;letter-spacing:.22em;font-size:14px}
+.nav-links{display:flex;gap:26px;font-family:"Spline Sans Mono",monospace;font-size:12.5px;letter-spacing:.04em}
+.nav-links a{color:var(--muted)}
+.nav-links a:hover{color:var(--green);text-decoration:none}
+@media(max-width:640px){.nav-links{display:none}}
+
+.hero{
+  display:grid;
+  grid-template-columns:1.15fr .85fr;
+  gap:48px;
+  align-items:center;
+  padding:88px 0 72px;
+}
+@media(max-width:820px){.hero{grid-template-columns:1fr;padding:56px 0 40px}}
+.kicker{
+  font-family:"Spline Sans Mono",monospace;
+  font-size:12px;letter-spacing:.28em;text-transform:uppercase;
+  color:var(--green);
+  display:flex;align-items:center;gap:12px;
+  margin-bottom:22px;
+}
+.kicker::before{content:"";display:block;width:34px;height:1px;background:var(--green-dim)}
+h1{
+  font-size:clamp(38px,5.4vw,60px);
+  font-weight:420;
+  line-height:1.08;
+  letter-spacing:-.015em;
+  margin-bottom:22px;
+}
+h1 em{font-style:italic;font-weight:340;color:var(--green)}
+.lede{color:var(--muted);font-size:19px;max-width:34em;margin-bottom:34px}
+.cta-row{display:flex;gap:14px;flex-wrap:wrap}
+.btn{
+  font-family:"Spline Sans Mono",monospace;font-size:13.5px;font-weight:500;
+  padding:13px 22px;border-radius:8px;display:inline-block;
+  transition:transform .15s ease,box-shadow .15s ease;
+}
+.btn:hover{text-decoration:none;transform:translateY(-1px)}
+.btn-primary{background:var(--green);color:#07130c;box-shadow:0 0 0 rgba(69,229,142,0)}
+.btn-primary:hover{box-shadow:0 6px 24px rgba(69,229,142,.25)}
+.btn-ghost{border:1px solid var(--line-strong);color:var(--ink)}
+.btn-ghost:hover{border-color:var(--green-dim)}
+
+/* ---- radar ---- */
+.radar-shell{display:flex;justify-content:center}
+.radar{
+  --size:min(340px,72vw);
+  width:var(--size);height:var(--size);
+  border-radius:50%;
+  position:relative;
+  background:
+    radial-gradient(circle, rgba(69,229,142,.08) 0%, rgba(69,229,142,.03) 55%, transparent 72%),
+    var(--surface);
+  border:1px solid var(--line-strong);
+  box-shadow:0 0 80px rgba(69,229,142,.10), inset 0 0 60px rgba(0,0,0,.5);
+}
+.radar .ring{position:absolute;border-radius:50%;border:1px solid var(--line)}
+.radar .r1{inset:16%}
+.radar .r2{inset:32%}
+.radar .r3{inset:48%}
+.radar .axis-h,.radar .axis-v{position:absolute;background:var(--line)}
+.radar .axis-h{left:4%;right:4%;top:50%;height:1px}
+.radar .axis-v{top:4%;bottom:4%;left:50%;width:1px}
+.sweep{
+  position:absolute;inset:2%;
+  border-radius:50%;
+  background:conic-gradient(from 0deg, rgba(69,229,142,.38), rgba(69,229,142,.05) 18%, transparent 26%);
+  animation:sweep 5s linear infinite;
+  filter:blur(1px);
+}
+.blip{
+  position:absolute;width:9px;height:9px;border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 10px var(--green-dim);
+  animation:blink 3.2s ease-in-out infinite;
+}
+.blip.deal{background:var(--amber);box-shadow:0 0 12px rgba(255,180,84,.6)}
+.blip-tag{
+  position:absolute;
+  font-family:"Spline Sans Mono",monospace;font-size:10px;letter-spacing:.12em;
+  color:var(--muted);
+  transform:translate(12px,-4px);white-space:nowrap;
+}
+.blip.deal + .blip-tag{color:var(--amber)}
+.radar-caption{
+  text-align:center;margin-top:18px;
+  font-family:"Spline Sans Mono",monospace;font-size:11.5px;letter-spacing:.18em;
+  color:var(--muted);text-transform:uppercase;
+}
+@keyframes sweep{to{transform:rotate(360deg)}}
+@keyframes blink{0%,100%{opacity:.35}50%{opacity:1}}
+
+section{padding:64px 0;border-top:1px solid var(--line)}
+.sec-label{
+  font-family:"Spline Sans Mono",monospace;font-size:11.5px;letter-spacing:.3em;
+  text-transform:uppercase;color:var(--green);margin-bottom:14px;
+}
+h2{font-size:clamp(26px,3.4vw,34px);font-weight:420;letter-spacing:-.01em;margin-bottom:14px}
+.sec-intro{color:var(--muted);max-width:40em;margin-bottom:40px}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:820px){.grid{grid-template-columns:1fr}}
+.card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:26px 24px;
+  transition:border-color .2s ease,transform .2s ease;
+}
+.card:hover{border-color:var(--line-strong);transform:translateY(-2px)}
+.card .idx{
+  font-family:"Spline Sans Mono",monospace;font-size:11px;color:var(--green);
+  letter-spacing:.2em;display:block;margin-bottom:14px;
+}
+.card h3{font-size:19px;font-weight:560;margin-bottom:8px;letter-spacing:-.01em}
+.card p{color:var(--muted);font-size:15.5px}
+
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+@media(max-width:820px){.steps{grid-template-columns:1fr}}
+.step{padding:30px 26px;background:var(--surface)}
+.step + .step{border-left:1px solid var(--line)}
+@media(max-width:820px){.step + .step{border-left:none;border-top:1px solid var(--line)}}
+.step .num{
+  font-family:"Spline Sans Mono",monospace;font-size:26px;font-weight:600;color:var(--green);
+  display:block;margin-bottom:12px;
+}
+.step h3{font-size:17.5px;font-weight:560;margin-bottom:6px}
+.step p{color:var(--muted);font-size:15px}
+
+.oss{
+  display:grid;grid-template-columns:1fr auto;gap:28px;align-items:center;
+  background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--radius);
+  padding:34px 32px;
+}
+@media(max-width:680px){.oss{grid-template-columns:1fr}}
+.oss p{color:var(--muted);max-width:36em}
+
+footer{border-top:1px solid var(--line);padding:34px 0 44px}
+.foot{
+  display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  font-family:"Spline Sans Mono",monospace;font-size:12px;color:var(--muted);letter-spacing:.05em;
+}
+.foot a{color:var(--muted)}
+.foot a:hover{color:var(--green)}
+
+.reveal{opacity:0;transform:translateY(14px);animation:reveal .7s ease forwards}
+.d1{animation-delay:.05s}.d2{animation-delay:.15s}.d3{animation-delay:.25s}.d4{animation-delay:.35s}
+@keyframes reveal{to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){
+  .sweep,.blip,.brand-dot{animation:none}
+  .reveal{animation:none;opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top">
+      <span class="brand-dot"></span>
+      <span class="brand-name">VIGÍA</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#opensource">Open source</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <div>
+      <p class="kicker reveal d1">Travel deal radar · Alicante (ALC)</p>
+      <h1 class="reveal d2">The fare watcher that <em>never blinks.</em></h1>
+      <p class="lede reveal d3">
+        Vigía continuously scans flight fares departing Alicante, compares every price
+        against its historical baseline, and pings you on Telegram the moment a genuine
+        deal shows up — before it disappears.
+      </p>
+      <div class="cta-row reveal d4">
+        <a class="btn btn-primary" href="https://github.com/Arreketefo/vigia">View on GitHub</a>
+        <a class="btn btn-ghost" href="#how">How it works</a>
+      </div>
+    </div>
+    <div class="reveal d3">
+      <div class="radar-shell">
+        <div class="radar" role="img" aria-label="Radar screen with a rotating sweep and destination blips">
+          <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+          <div class="axis-h"></div><div class="axis-v"></div>
+          <div class="sweep"></div>
+          <div class="blip" style="top:26%;left:62%"></div>
+          <div class="blip-tag" style="top:26%;left:62%">PMI</div>
+          <div class="blip deal" style="top:58%;left:30%;animation-delay:.8s"></div>
+          <div class="blip-tag" style="top:58%;left:30%">TFS −41%</div>
+          <div class="blip" style="top:70%;left:66%;animation-delay:1.6s"></div>
+          <div class="blip-tag" style="top:70%;left:66%">FCO</div>
+        </div>
+      </div>
+      <p class="radar-caption">scanning · 24/7 · baseline-aware</p>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <p class="sec-label">Features</p>
+      <h2>Built to catch the drop, not the noise.</h2>
+      <p class="sec-intro">
+        Fare “deals” are everywhere; real ones are rare. Vigía tracks price history per route
+        so it only raises an alert when a fare is genuinely below its usual level.
+      </p>
+      <div class="grid">
+        <div class="card">
+          <span class="idx">01</span>
+          <h3>Continuous monitoring</h3>
+          <p>Scheduled scans of your configured routes and date windows, around the clock, from a lightweight self-hosted service.</p>
+        </div>
+        <div class="card">
+          <span class="idx">02</span>
+          <h3>Baseline-aware alerts</h3>
+          <p>Every fare is compared against its route’s historical baseline. Alerts fire on real drops, with the discount quantified.</p>
+        </div>
+        <div class="card">
+          <span class="idx">03</span>
+          <h3>Instant Telegram delivery</h3>
+          <p>Deals land in your Telegram the moment they’re detected — with route, dates, price and deep link to book.</p>
+        </div>
+        <div class="card">
+          <span class="idx">04</span>
+          <h3>Fully configurable</h3>
+          <p>Destinations, trip lengths, date horizons, price thresholds and alert cadence — all tuned from a simple config, hot-reloadable.</p>
+        </div>
+        <div class="card">
+          <span class="idx">05</span>
+          <h3>Bot-controlled operations</h3>
+          <p>Pause, resume and adjust the radar directly from Telegram. No SSH required for day-to-day control.</p>
+        </div>
+        <div class="card">
+          <span class="idx">06</span>
+          <h3>Self-hosted &amp; private</h3>
+          <p>Runs in a single Docker container on your own machine. Your searches and history stay with you.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <p class="sec-label">How it works</p>
+      <h2>Three steps between a price drop and your pocket.</h2>
+      <p class="sec-intro">A simple pipeline, running on repeat.</p>
+      <div class="steps">
+        <div class="step">
+          <span class="num">1</span>
+          <h3>Scan</h3>
+          <p>Vigía queries current fares for every configured route and date window departing Alicante (ALC).</p>
+        </div>
+        <div class="step">
+          <span class="num">2</span>
+          <h3>Compare</h3>
+          <p>Each fare is checked against the route’s stored price history to separate genuine drops from ordinary fluctuation.</p>
+        </div>
+        <div class="step">
+          <span class="num">3</span>
+          <h3>Alert</h3>
+          <p>Qualifying deals are pushed to Telegram instantly, ranked by how far below baseline they’ve fallen.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="opensource">
+    <div class="wrap">
+      <p class="sec-label">Open source</p>
+      <div class="oss">
+        <div>
+          <h2>Open code, open radar.</h2>
+          <p>
+            Vigía is free and open source, written in Python and shipped as a Docker container.
+            Read the code, run your own radar, or contribute improvements.
+          </p>
+        </div>
+        <a class="btn btn-primary" href="https://github.com/Arreketefo/vigia">github.com/Arreketefo/vigia</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact">
+    <div class="wrap">
+      <p class="sec-label">Contact</p>
+      <h2>Questions or feedback?</h2>
+      <p class="sec-intro">
+        The project is developed in the open. For questions, bug reports or feature requests,
+        open an issue on the GitHub repository — it’s the fastest way to reach the maintainer.
+      </p>
+      <a class="btn btn-ghost" href="https://github.com/Arreketefo/vigia/issues">Open an issue →</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>© 2026 Vigía Travel Radar · Alicante, Spain</span>
+    <span><em>vigía</em>&nbsp;(n.) — Spanish for <em>lookout</em>: the watch kept from the crow’s nest.</span>
+    <a href="https://github.com/Arreketefo/vigia">GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>
