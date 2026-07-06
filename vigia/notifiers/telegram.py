@@ -1,15 +1,8 @@
-import httpx
+from radar_core.notifiers import TelegramTransport, escape_markdown
+from radar_core.stats import drop_display
 
 from vigia.cities import CityDirectory
 from vigia.contracts import Deal
-from vigia.notifiers.format import drop_display
-
-
-def _escape_markdown(text: str) -> str:
-    """Minimal escaping for legacy Markdown parse_mode (city names)."""
-    for char in ("_", "*", "[", "`"):
-        text = text.replace(char, f"\\{char}")
-    return text
 
 
 class TelegramNotifier:
@@ -18,17 +11,15 @@ class TelegramNotifier:
     def __init__(
         self, bot_token: str, chat_id: str, cities: CityDirectory | None = None
     ) -> None:
-        self._url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        self._chat_id = chat_id
+        self._transport = TelegramTransport(bot_token, chat_id)
         self._cities = cities
-        self._client = httpx.AsyncClient(timeout=10.0)
 
     async def send(self, deal: Deal) -> None:
         destination = deal.destination
         if self._cities is not None:
             name = await self._cities.name(deal.destination)
             if name:
-                destination = f"{_escape_markdown(name)} ({deal.destination})"
+                destination = f"{escape_markdown(name)} ({deal.destination})"
         badge = "✅ LIVE" if deal.confirmed else "📡 señal"
         lines = [
             f"*{deal.origin} → {destination}* {badge}",
@@ -56,16 +47,7 @@ class TelegramNotifier:
         ]
         if links:
             lines.append(" · ".join(links))
-        resp = await self._client.post(
-            self._url,
-            json={
-                "chat_id": self._chat_id,
-                "text": "\n".join(lines),
-                "parse_mode": "Markdown",
-                "disable_web_page_preview": True,
-            },
-        )
-        resp.raise_for_status()
+        await self._transport.send_text("\n".join(lines))
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        await self._transport.aclose()

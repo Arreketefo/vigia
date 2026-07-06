@@ -30,7 +30,7 @@ def _capture_notifier(captured: dict) -> TelegramNotifier:
         return httpx.Response(200, json={"ok": True})
 
     notifier = TelegramNotifier("tok", "42", cities=FakeCities())  # type: ignore[arg-type]
-    notifier._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    notifier._transport._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return notifier
 
 

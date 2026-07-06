@@ -6,8 +6,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
-# Dependency layer (cached unless lockfile changes)
+# Dependency layer (cached unless lockfile or vendored core changes).
+# vendor/ holds the private radar-core lib (path dependency): it must exist
+# BEFORE the first sync.
 COPY pyproject.toml uv.lock ./
+COPY vendor ./vendor
 RUN uv sync --frozen --no-dev --no-install-project
 
 # App layer

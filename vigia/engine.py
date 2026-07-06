@@ -1,11 +1,18 @@
-"""DealEngine: robust baseline (median + MAD), anomaly + budget rule, dedup key."""
+"""DealEngine: anomaly + budget rule and dedup key (domain logic).
+
+The robust statistics live in radar_core.stats; `robust_baseline` is
+re-exported here so internal consumers keep one import point.
+"""
 
 from __future__ import annotations
 
 import hashlib
-import statistics
 from datetime import date
 from typing import Protocol
+
+from radar_core.stats import robust_baseline
+
+__all__ = ["DealConfig", "dedup_key", "is_deal", "robust_baseline"]
 
 _BUCKET = 25.0
 
@@ -16,12 +23,6 @@ class DealConfig(Protocol):
     min_sample: int
     min_drop_pct: float
     z_threshold: float
-
-
-def robust_baseline(totals: list[float]) -> tuple[float, float]:
-    median = statistics.median(totals)
-    mad = statistics.median([abs(x - median) for x in totals])
-    return median, mad
 
 
 def is_deal(

@@ -1,18 +1,13 @@
-"""Shared deal -> text rendering used by every channel."""
+"""Shared deal -> text rendering used by every channel (domain rendering;
+the transports live in radar_core.notifiers)."""
 
 from __future__ import annotations
 
+from radar_core.stats import drop_display
+
 from vigia.contracts import Deal
 
-
-def drop_display(drop_pct: float) -> str:
-    """Signed price-vs-baseline delta: drop 0.30 -> '-30%', -0.17 -> '+17%'.
-
-    A hard-steal can fire ABOVE baseline; a hardcoded '-' would render that
-    as a bogus double-negative discount. Rounding to int first avoids the
-    IEEE negative zero ('-0%') that float formatting produces.
-    """
-    return f"{round(-drop_pct * 100):+d}%"
+__all__ = ["deal_lines", "drop_display"]
 
 
 def deal_lines(deal: Deal) -> list[str]:

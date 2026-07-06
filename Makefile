@@ -8,7 +8,16 @@ help:  ## Show this help
 		| awk 'BEGIN{FS=":.*?## "}{printf "  %-14s %s\n", $$1, $$2}'
 
 ## --- Dev (local, on your Mac) ---
-install:  ## Sync deps locally
+# Only what the build needs (pyproject + package): caches/tests/lock would
+# bust the Docker dependency layer on every local test run.
+vendor-core:  ## Refresh the vendored radar-core snapshot (private lib)
+	rsync -a --delete \
+		--exclude '.git' --exclude '.venv' --exclude 'tests' \
+		--exclude 'uv.lock' --exclude '__pycache__' --exclude '.*_cache' \
+		--exclude '*.md' \
+		../radar-core/ vendor/radar-core/
+
+install: vendor-core  ## Sync deps locally
 	uv sync
 
 dev:  ## Run the scheduler locally (foreground)
@@ -33,7 +42,7 @@ fmt:  ## Format
 	uv run ruff format .
 
 ## --- Docker (homelab) ---
-build:  ## Build the image
+build: vendor-core  ## Build the image
 	$(COMPOSE) build
 
 up:  ## Start the daemon (detached)
@@ -52,6 +61,6 @@ docker-init:  ## Init DB inside the container
 	$(COMPOSE) run --rm vigia uv run python -m vigia.db init
 
 ## --- Deploy (remote Proxmox host) ---
-deploy:  ## rsync + rebuild + up on VIGIA_HOST
-	rsync -az --exclude '.git' --exclude '.env' --exclude '.venv' ./ $(VIGIA_HOST):~/vigia/
+deploy: vendor-core  ## rsync + rebuild + up on VIGIA_HOST
+	rsync -az --delete --exclude '.git' --exclude '.env' --exclude '.venv' ./ $(VIGIA_HOST):~/vigia/
 	ssh $(VIGIA_HOST) 'cd ~/vigia && docker compose up -d --build'

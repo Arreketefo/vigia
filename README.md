@@ -28,6 +28,10 @@ Telegram and email.
 Python 3.12 (asyncio) · httpx · APScheduler · SQLite (aiosqlite) ·
 pydantic-settings · Docker Compose for deployment.
 
+> Note: depends on `radar-core`, a private shared library vendored into the
+> build context by `make vendor-core`; the public repo is not buildable
+> standalone.
+
 ## Quickstart
 
 ```bash

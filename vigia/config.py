@@ -1,14 +1,11 @@
 from datetime import date
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
+from radar_core.config import csv_dates, csv_set, radar_settings_config
 
 
 class Settings(BaseSettings):
-    # env_ignore_empty: a blank value in .env (VIGIA_X=) means "use the
-    # default" instead of crashing numeric fields at startup.
-    model_config = SettingsConfigDict(
-        env_prefix="VIGIA_", env_file=".env", extra="ignore", env_ignore_empty=True
-    )
+    model_config = radar_settings_config("VIGIA_")
 
     travelpayouts_token: str
     origin: str = "ALC"
@@ -65,11 +62,7 @@ class Settings(BaseSettings):
     enable_price_confirmer: bool = False
 
     def excluded_countries(self) -> set[str]:
-        return {c.strip().upper() for c in self.exclude_countries.split(",") if c.strip()}
+        return csv_set(self.exclude_countries)
 
     def extra_holiday_dates(self) -> set[date]:
-        return {
-            date.fromisoformat(d.strip())
-            for d in self.extra_holidays.split(",")
-            if d.strip()
-        }
+        return csv_dates(self.extra_holidays)

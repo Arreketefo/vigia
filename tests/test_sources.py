@@ -6,8 +6,8 @@ from datetime import date
 
 import httpx
 import pytest
+from radar_core.http import CircuitOpenError
 
-from vigia.http import CircuitOpenError
 from vigia.sources.aviasales import AviasalesFlightSource
 from vigia.sources.hotellook import HotellookHotelSource
 

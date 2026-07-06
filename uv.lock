@@ -481,6 +481,33 @@ wheels = [
 ]
 
 [[package]]
+name = "radar-core"
+version = "0.1.0"
+source = { directory = "vendor/radar-core" }
+dependencies = [
+    { name = "aiosqlite" },
+    { name = "apscheduler" },
+    { name = "httpx" },
+    { name = "pydantic-settings" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.20" },
+    { name = "apscheduler", specifier = ">=3.10,<4" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pydantic-settings", specifier = ">=2.4" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.11" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "ruff", specifier = ">=0.6" },
+]
+
+[[package]]
 name = "ruff"
 version = "0.15.20"
 source = { registry = "https://pypi.org/simple" }
@@ -566,6 +593,7 @@ dependencies = [
     { name = "holidays" },
     { name = "httpx" },
     { name = "pydantic-settings" },
+    { name = "radar-core" },
 ]
 
 [package.dev-dependencies]
@@ -583,6 +611,7 @@ requires-dist = [
     { name = "holidays", specifier = ">=0.50" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic-settings", specifier = ">=2.4" },
+    { name = "radar-core", directory = "vendor/radar-core" },
 ]
 
 [package.metadata.requires-dev]

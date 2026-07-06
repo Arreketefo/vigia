@@ -16,10 +16,10 @@ from datetime import date, datetime
 from typing import Any
 
 import httpx
+from radar_core.http import CircuitBreaker, get_json
+from radar_core.ratelimit import TokenBucket
 
 from vigia.contracts import FlightQuote
-from vigia.http import CircuitBreaker, get_json
-from vigia.ratelimit import TokenBucket
 
 log = logging.getLogger(__name__)
 

@@ -1,17 +1,20 @@
-"""PriceStore: SQLite persistence for observations, baselines, deals and alert dedup."""
+"""PriceStore: domain persistence (observations, baselines, deals, alert
+dedup) on top of radar_core's SQLite base layer."""
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import aiosqlite
+from radar_core.store import TIMESTAMP_FMT, BaseStore, iso_date, open_db, utcnow_str
 
 from vigia import engine
 from vigia.contracts import Deal
+
+__all__ = ["TIMESTAMP_FMT", "PriceStore", "Route", "open_store", "utcnow_str"]
 
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema" / "schema.sql"
 
@@ -20,24 +23,12 @@ _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema" / "schema.sql"
 _BASELINE_MAX_OBS = 60
 _BASELINE_MAX_AGE_DAYS = 30
 
-# Same format SQLite's datetime('now') produces; healthcheck parses with it.
-TIMESTAMP_FMT = "%Y-%m-%d %H:%M:%S"
-
 
 @dataclass(frozen=True)
 class Route:
     id: int
     origin: str
     destination: str
-
-
-def utcnow_str() -> str:
-    return datetime.now(UTC).strftime(TIMESTAMP_FMT)
-
-
-def _iso(d: date | None) -> str | None:
-    """Single-sourced DB date encoding; should_alert matches on these strings."""
-    return d.isoformat() if d else None
 
 
 def _month_range(month_bucket: str) -> tuple[str, str]:
@@ -49,21 +40,11 @@ def _month_range(month_bucket: str) -> tuple[str, str]:
 
 @asynccontextmanager
 async def open_store(db_path: str) -> AsyncIterator[PriceStore]:
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = await aiosqlite.connect(db_path)
-    try:
-        await conn.execute("PRAGMA journal_mode=WAL")
-        await conn.execute("PRAGMA foreign_keys=ON")
-        conn.row_factory = aiosqlite.Row
+    async with open_db(db_path) as conn:
         yield PriceStore(conn)
-    finally:
-        await conn.close()
 
 
-class PriceStore:
-    def __init__(self, conn: aiosqlite.Connection) -> None:
-        self._conn = conn
-
+class PriceStore(BaseStore):
     async def init_schema(self) -> None:
         await self._conn.executescript(_SCHEMA_PATH.read_text())
         await self._conn.commit()
@@ -149,7 +130,7 @@ class PriceStore:
             (
                 route_id,
                 depart_date.isoformat(),
-                _iso(return_date),
+                iso_date(return_date),
                 nights,
                 flight_price,
                 hotel_price_night,
@@ -162,17 +143,9 @@ class PriceStore:
         if commit:
             await self._conn.commit()
 
-    async def commit(self) -> None:
-        await self._conn.commit()
-
     async def prune_observations(self, max_age_days: int) -> int:
         """Drop observations past any baseline window; keeps the table bounded."""
-        cur = await self._conn.execute(
-            f"DELETE FROM price_observations "
-            f"WHERE captured_at < datetime('now', '-{int(max_age_days)} days')"
-        )
-        await self._conn.commit()
-        return cur.rowcount
+        return await self.prune_older_than("price_observations", "captured_at", max_age_days)
 
     async def baseline(
         self, route_id: int, month_bucket: str, pax: int, with_hotel: bool
@@ -235,7 +208,7 @@ class PriceStore:
             (
                 route_id,
                 deal.depart_date.isoformat(),
-                _iso(deal.return_date),
+                iso_date(deal.return_date),
                 deal.total_price,
                 deal.baseline,
                 deal.drop_pct,
@@ -274,7 +247,7 @@ class PriceStore:
             (
                 route_id,
                 depart_date.isoformat(),
-                _iso(return_date),
+                iso_date(return_date),
             ),
         )
         row = await cur.fetchone()

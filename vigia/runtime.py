@@ -1,11 +1,15 @@
 """Wiring shared by the daemon (`python -m vigia`) and the one-shot tick
-(`python -m vigia.tick`): build sources/notifiers from config and run ticks."""
+(`python -m vigia.tick`): build sources/notifiers from config and run ticks.
+
+Tick serialization and graceful shutdown live in radar_core.runtime.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import date
+
+from radar_core.runtime import setup_logging
 
 from vigia.cities import CityDirectory
 from vigia.config import Settings
@@ -21,15 +25,7 @@ from vigia.tripwindows import TripWindowPolicy
 
 log = logging.getLogger(__name__)
 
-
-def setup_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
-    # httpx logs every request URL at INFO — noisy for a daemon that makes
-    # hundreds of calls per tick, and URLs must never carry secrets anyway.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+__all__ = ["Runtime", "build_hotel_source", "setup_logging"]
 
 
 def build_hotel_source(cfg: Settings) -> HotelSource | None:
@@ -145,27 +141,19 @@ class Runtime:
         self.cities = CityDirectory()
         self.trip_policy = build_trip_policy(cfg)
         self.notifiers = build_notifiers(cfg, cities=self.cities)
-        # Serializes ticks and lets shutdown wait for the in-flight one.
-        self._tick_lock = asyncio.Lock()
 
     async def run_tick(self) -> TickStats:
-        async with self._tick_lock:
-            return await tick(
-                flights=self.flights,
-                hotels=self.hotels,
-                store=self.store,
-                cfg=self.cfg,
-                notifiers=self.notifiers,
-                confirmer=self.confirmer,
-                enricher=self.enricher,
-                cities=self.cities,
-                trip_policy=self.trip_policy,
-            )
-
-    async def wait_idle(self) -> None:
-        """Blocks until no tick is running (used before closing resources)."""
-        async with self._tick_lock:
-            pass
+        return await tick(
+            flights=self.flights,
+            hotels=self.hotels,
+            store=self.store,
+            cfg=self.cfg,
+            notifiers=self.notifiers,
+            confirmer=self.confirmer,
+            enricher=self.enricher,
+            cities=self.cities,
+            trip_policy=self.trip_policy,
+        )
 
     async def aclose(self) -> None:
         # Duck-typed close for every component: providers behind the Protocol

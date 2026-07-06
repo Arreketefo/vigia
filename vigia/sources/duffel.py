@@ -16,10 +16,10 @@ from dataclasses import replace
 from typing import Any
 
 import httpx
+from radar_core.http import CircuitBreaker, post_json
+from radar_core.ratelimit import TokenBucket
 
 from vigia.contracts import Deal
-from vigia.http import CircuitBreaker, post_json
-from vigia.ratelimit import TokenBucket
 
 log = logging.getLogger(__name__)
 
