@@ -1,6 +1,9 @@
 COMPOSE := docker compose
 VIGIA_HOST ?= user@homelab       # override for remote deploy
 
+# Sello de build para /version (commit corto + fecha UTC)
+BUILD_INFO ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)-$(shell date -u +%Y-%m-%d)
+
 .DEFAULT_GOAL := help
 
 help:  ## Show this help
@@ -43,7 +46,7 @@ fmt:  ## Format
 
 ## --- Docker (homelab) ---
 build: vendor-core  ## Build the image
-	$(COMPOSE) build
+	BUILD_INFO=$(BUILD_INFO) $(COMPOSE) build
 
 up:  ## Start the daemon (detached)
 	$(COMPOSE) up -d
@@ -63,4 +66,4 @@ docker-init:  ## Init DB inside the container
 ## --- Deploy (remote Proxmox host) ---
 deploy: vendor-core  ## rsync + rebuild + up on VIGIA_HOST
 	rsync -az --delete --exclude '.git' --exclude '.env' --exclude '.venv' ./ $(VIGIA_HOST):~/vigia/
-	ssh $(VIGIA_HOST) 'cd ~/vigia && docker compose up -d --build'
+	ssh $(VIGIA_HOST) 'cd ~/vigia && BUILD_INFO=$(BUILD_INFO) docker compose up -d --build'

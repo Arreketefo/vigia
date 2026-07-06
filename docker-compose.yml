@@ -1,6 +1,9 @@
 services:
   vigia:
-    build: .
+    build:
+      context: .
+      args:
+        BUILD_INFO: ${BUILD_INFO:-dev}
     image: vigia:latest
     restart: unless-stopped
     env_file: .env

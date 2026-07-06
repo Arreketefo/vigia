@@ -21,5 +21,9 @@ RUN uv sync --frozen --no-dev
 # at container runtime (crash-loop without network, slow healthchecks).
 ENV UV_NO_SYNC=1
 
+# Sello de build para /version (lo inyecta make build/deploy)
+ARG BUILD_INFO=dev
+ENV BUILD_INFO=$BUILD_INFO
+
 # Long-running scheduler daemon
 CMD ["uv", "run", "python", "-m", "vigia"]

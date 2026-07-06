@@ -17,11 +17,10 @@ from radar_core.botcontrol import (
     boolean,
     float_range,
     int_range,
-    is_paused,
+    skip_tick_if_paused,
     text,
 )
 from radar_core.runtime import setup_logging
-from radar_core.store import utcnow_str
 
 from vigia.cities import CityDirectory
 from vigia.config import Settings
@@ -187,16 +186,16 @@ class Runtime:
                 OVERRIDES,
                 domain_commands=self._domain_commands(),
                 status_provider=self._status,
+                digest_provider=self._status,  # el status 24h ES el resumen diario
+                digest_hour=cfg.digest_hour,
             )
 
     async def run_tick(self) -> TickStats:
         # Config efectiva del tick = .env ⊕ overrides del bot (en caliente).
         cfg = apply_overrides(self.cfg, await self.store.get_overrides(), OVERRIDES)
-        if await is_paused(self.store):
-            from vigia.scheduler import LAST_TICK_KEY
+        from vigia.scheduler import LAST_TICK_KEY
 
-            await self.store.set_meta(LAST_TICK_KEY, utcnow_str())
-            log.info("en pausa (/reanuda en Telegram): tick omitido")
+        if await skip_tick_if_paused(self.store, LAST_TICK_KEY):
             return TickStats()
         return await tick(
             flights=self.flights,

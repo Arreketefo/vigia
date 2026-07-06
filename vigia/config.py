@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     # Full-trip cap (flight*pax + hotel*nights) applied to enriched candidates
     # in 'candidates' mode. budget_cap governs detection (flight-only totals).
     trip_budget_cap: float = 600.0
+    digest_hour: int = 9                    # hora UTC del digest diario (/digest on)
     db_path: str = "/data/vigia.db"
     # Notifiers
     telegram_bot_token: str | None = None
