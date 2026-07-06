@@ -161,7 +161,7 @@ h1 em{font-style:italic;font-weight:340;color:var(--green)}
 @keyframes sweep{to{transform:rotate(360deg)}}
 @keyframes blink{0%,100%{opacity:.35}50%{opacity:1}}
 
-section{padding:64px 0;border-top:1px solid var(--line)}
+section{padding:64px 0;border-top:1px solid var(--line);scroll-margin-top:64px}
 .sec-label{
   font-family:"Spline Sans Mono",monospace;font-size:11.5px;letter-spacing:.3em;
   text-transform:uppercase;color:var(--green);margin-bottom:14px;
@@ -336,7 +336,7 @@ footer{border-top:1px solid var(--line);padding:34px 0 44px}
         <div class="step">
           <span class="num">3</span>
           <h3>Alert</h3>
-          <p>Qualifying deals are pushed to Telegram instantly, ranked by how far below baseline they’ve fallen.</p>
+          <p>Qualifying deals are pushed to Telegram instantly, with the drop versus baseline quantified in every alert.</p>
         </div>
       </div>
     </div>
@@ -349,8 +349,8 @@ footer{border-top:1px solid var(--line);padding:34px 0 44px}
         <div>
           <h2>Open code, open radar.</h2>
           <p>
-            Vigía is free and open source, written in Python and shipped as a Docker container.
-            Read the code, run your own radar, or contribute improvements.
+            Vigía is developed in the open, written in Python and shipped as a Docker container.
+            Read the code, follow development, or contribute ideas and improvements.
           </p>
         </div>
         <a class="btn btn-primary" href="https://github.com/Arreketefo/vigia">github.com/Arreketefo/vigia</a>
