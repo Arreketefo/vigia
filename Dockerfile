@@ -17,5 +17,9 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 RUN uv sync --frozen --no-dev
 
+# From here on, uv run must NOT re-sync: it would pull dev deps from PyPI
+# at container runtime (crash-loop without network, slow healthchecks).
+ENV UV_NO_SYNC=1
+
 # Long-running scheduler daemon
 CMD ["uv", "run", "python", "-m", "vigia"]
