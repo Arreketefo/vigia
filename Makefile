@@ -1,5 +1,6 @@
 COMPOSE := docker compose
-VIGIA_HOST ?= user@homelab       # override for remote deploy
+# Deploy host (ssh alias). Override: VIGIA_HOST=user@otro make deploy
+VIGIA_HOST ?= gcp-apps
 
 # Sello de build para /version (commit corto + fecha UTC)
 BUILD_INFO ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)-$(shell date -u +%Y-%m-%d)
