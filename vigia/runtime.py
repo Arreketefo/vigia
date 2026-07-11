@@ -257,41 +257,76 @@ class Runtime:
         )
 
     def _domain_commands(self) -> dict[str, DomainHandler]:
+        def _eur(raw: object) -> str:
+            # "200.0" / 200.0 -> "200 €"; conserva decimales reales (350.5 €).
+            try:
+                return f"{float(str(raw)):g} €"
+            except ValueError:
+                return str(raw)
+
+        async def _set_budget(
+            cmd: str, key: str, emoji: str, titulo: str, nota: str, args: str
+        ) -> str:
+            # Sin valor: mostrar el efectivo (override o .env) en vez de
+            # parsear "" — float("") reventaba con "could not convert
+            # string to float: ''".
+            spec = OVERRIDES[key]
+            overrides = await self.store.get_overrides()
+            if not args.strip():
+                if key in overrides:
+                    origen = f"{_eur(overrides[key])}  ·  fijado por ti"
+                else:
+                    origen = f"{_eur(getattr(self.cfg, key))}  ·  por defecto"
+                return (f"{emoji} {titulo}\n"
+                        f"Actual: {origen}\n"
+                        f"{nota}\n"
+                        f"✏️ Cambiar:  /{cmd} <€>")
+            value = spec.parse(args)
+            previo = _eur(overrides[key]) if key in overrides else _eur(getattr(self.cfg, key))
+            await self.store.set_override(key, args.strip())
+            return (f"✅ {titulo}\n"
+                    f"{_eur(value)}  (antes {previo})\n"
+                    f"Se aplica en el próximo chequeo.")
+
         async def presupuesto(args: str) -> str:
-            value = OVERRIDES["budget_cap"].parse(args)
-            await self.store.set_override("budget_cap", args.strip())
-            return f"budget_cap → {value} ✓"
+            return await _set_budget(
+                "presupuesto", "budget_cap", "💶", "Presupuesto de vuelos (2 pax)",
+                "Detección de chollos solo-vuelo.", args)
 
         async def presupuestoviaje(args: str) -> str:
-            value = OVERRIDES["trip_budget_cap"].parse(args)
-            await self.store.set_override("trip_budget_cap", args.strip())
-            return f"trip_budget_cap → {value} ✓"
+            return await _set_budget(
+                "presupuestoviaje", "trip_budget_cap", "🧳",
+                "Presupuesto del viaje completo",
+                "Vuelos + hotel; tope final del viaje.", args)
 
         async def paises(args: str) -> str:
             if not args.strip():
                 await self.store.delete_override("exclude_countries")
-                return "exclude_countries → (.env)"
-            await self.store.set_override("exclude_countries", args.strip().upper())
-            return f"países excluidos → {args.strip().upper()} ✓"
+                return "🌍 Países excluidos → por defecto (.env)"
+            codigos = args.strip().upper()
+            await self.store.set_override("exclude_countries", codigos)
+            return f"🚫 Países excluidos:  {codigos}"
 
         async def rutas(args: str) -> str:
             routes = await self.store.enabled_routes()
+            if not routes:
+                return "🗺️ No hay rutas activas."
             listado = ", ".join(r.destination for r in routes)
-            return f"{len(routes)} rutas: {listado}"
+            return f"🗺️ {len(routes)} rutas activas:\n{listado}"
 
         async def quitaruta(args: str) -> str:
             dest = args.strip().upper()
             if not dest:
-                return "uso: /quitaruta BUD"
+                return "✏️ Uso:  /quitaruta BUD"
             ok = await self.store.set_route_enabled(dest, False)
-            return f"{dest} desactivada ✓" if ok else f"{dest} no existe"
+            return f"🚫 {dest} desactivada" if ok else f"⚠️ {dest} no existe (mira /rutas)"
 
         async def ponruta(args: str) -> str:
             dest = args.strip().upper()
             if not dest:
-                return "uso: /ponruta BUD"
+                return "✏️ Uso:  /ponruta BUD"
             ok = await self.store.set_route_enabled(dest, True)
-            return f"{dest} reactivada ✓" if ok else f"{dest} no existe"
+            return f"✅ {dest} reactivada" if ok else f"⚠️ {dest} no existe (mira /rutas)"
 
         return {
             "presupuesto": presupuesto,
