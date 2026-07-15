@@ -18,9 +18,11 @@ __all__ = ["TIMESTAMP_FMT", "PriceStore", "Route", "open_store", "utcnow_str"]
 
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema" / "schema.sql"
 
-# Trailing window for the robust baseline: 60 observations or 30 days,
-# whichever limit is hit first.
-_BASELINE_MAX_OBS = 60
+# Trailing window for the robust baseline: 240 observations or 30 days,
+# whichever limit is hit first. At ~5 observations per scan, the old cap of 60
+# collapsed the "30-day" window to the last ~12 scans (hours, not days): the
+# median tracked short-term noise and slow price drops never looked anomalous.
+_BASELINE_MAX_OBS = 240
 _BASELINE_MAX_AGE_DAYS = 30
 
 

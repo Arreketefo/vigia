@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS deals (
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_deals_dedup ON deals(dedup_key);
+-- should_alert() looks up the last alert by route + exact dates via a JOIN on
+-- deals; without this index every deal evaluation scans the whole table.
+CREATE INDEX IF NOT EXISTS idx_deals_route_dates
+    ON deals(route_id, depart_date, return_date);
 
 -- Alert dedup ledger (per channel).
 CREATE TABLE IF NOT EXISTS alerts_sent (
