@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Check out Vigía
+        uses: actions/checkout@v7
+        with:
+          path: vigia
+
+      - name: Check out radar-core
+        uses: actions/checkout@v7
+        with:
+          repository: Arreketefo/radar-core
+          ref: v0.1.0
+          path: radar-core
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.32"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: "vigia/uv.lock"
+
+      - name: Install locked dependencies
+        working-directory: vigia
+        run: make vendor-core && uv sync --locked --dev
+
+      - name: Run tests
+        working-directory: vigia
+        run: uv run pytest -q
+
+      - name: Run Ruff
+        working-directory: vigia
+        run: uv run ruff check .
+
+      - name: Run mypy
+        working-directory: vigia
+        run: uv run mypy vigia
+
+      - name: Build distributions
+        working-directory: vigia
+        run: uv build

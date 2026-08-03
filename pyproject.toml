@@ -1,8 +1,27 @@
 [project]
 name = "vigia"
 version = "0.1.0"
-description = "Vigía — radar de ofertas de viaje (vuelo + hotel) desde ALC"
+description = "Travel deal radar with robust price-drop detection and live repricing"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Oscar Aguilar Ramos" }]
 requires-python = ">=3.12"
+keywords = [
+    "anomaly-detection",
+    "asyncio",
+    "price-monitoring",
+    "telegram-bot",
+    "travel",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
 dependencies = [
     "radar-core",
     "httpx>=0.27",
@@ -12,7 +31,13 @@ dependencies = [
     "holidays>=0.50",
 ]
 
-# radar-core is a PRIVATE shared library, vendored into the build context by
+[project.urls]
+Homepage = "https://github.com/Arreketefo/vigia"
+Repository = "https://github.com/Arreketefo/vigia"
+Issues = "https://github.com/Arreketefo/vigia/issues"
+Changelog = "https://github.com/Arreketefo/vigia/blob/main/CHANGELOG.md"
+
+# radar-core is versioned independently and vendored into the build context by
 # `make vendor-core` (git-ignored; refreshed from ../radar-core).
 [tool.uv.sources]
 radar-core = { path = "vendor/radar-core" }
