@@ -15,6 +15,7 @@ help:  ## Show this help
 # Only what the build needs (pyproject + package): caches/tests/lock would
 # bust the Docker dependency layer on every local test run.
 vendor-core:  ## Refresh the reviewed radar-core snapshot
+	mkdir -p vendor
 	rsync -a --delete \
 		--exclude '.git' --exclude '.venv' --exclude 'tests' \
 		--exclude 'uv.lock' --exclude '__pycache__' --exclude '.*_cache' \
